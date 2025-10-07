@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mini FHIR UI</title>
+  <style>
+    :root { --border:#e5e7eb; --muted:#6b7280; --ink:#111827; --bg:#fafafa;}
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; max-width: 1200px; margin: auto; background: var(--bg);}
+    h1 { margin: 0 0 8px 0 }
+    a { color:#2563eb; text-decoration:none }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:12px }
+    .card { border: 1px solid var(--border); border-radius: 12px; padding:16px; margin: 16px 0; background:white; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+    label { display:block; font-size: 14px; color:#374151; margin-top:8px }
+    input, select { width: 100%; padding:8px; border:1px solid #d1d5db; border-radius:8px; margin-top:4px; background:white }
+    button { margin-top:12px; padding:10px 14px; border-radius:10px; border:1px solid var(--ink); background:var(--ink); color:white; cursor:pointer }
+    button.secondary { background:white; color:var(--ink) }
+    button.danger { background:#991b1b; border-color:#991b1b }
+    button:disabled { opacity:.6; cursor:not-allowed }
+    .muted { color:var(--muted); font-size:13px }
+    .stack { display:flex; gap:10px; flex-wrap:wrap; align-items:center }
+    table { width:100%; border-collapse: collapse; border-radius: 10px; overflow: hidden; border:1px solid var(--border); background:white }
+    th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); font-size:14px }
+    tr:hover { background:#f8fafc }
+    .id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; color:#475569 }
+    pre.json { background:#0b1020; color:#e5e7eb; padding:12px; border-radius:8px; overflow:auto; font-size:12px }
+    .two { display:grid; grid-template-columns: 1.4fr 1fr; gap:16px }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eef2ff; color:#312e81; font-size:12px; border:1px solid #c7d2fe }
+    .toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; margin-bottom:8px }
+    .right { text-align:right }
+    .controls { display:flex; gap:8px; align-items:center }
+
+    /* 新增：選取高亮、loading、空狀態、toast */
+    .row-selected { background:#eef2ff !important }
+    .loading { opacity:.6; pointer-events:none }
+    .empty { padding:16px; color:var(--muted); font-style:italic }
+    .toast {
+      position: fixed; right: 20px; bottom: 20px; background:#111827; color:white;
+      padding:10px 14px; border-radius:10px; box-shadow:0 4px 14px rgba(0,0,0,.2);
+      opacity:0; transform: translateY(8px); transition:.25s; z-index:9999;
+    }
+    .toast.show { opacity:1; transform: translateY(0) }
+  </style>
+</head>
+<body>
+  <h1>Mini FHIR UI</h1>
+  <p class="muted">表單 + 清單測試 <code>/Patient</code>、<code>/Observation</code>。API 文件：<a href="/docs" target="_blank">/docs</a> | 匯出：<a href="/export/patients.csv">patients.csv</a></p>
+
+  <!-- Create / Update Patient -->
+  <div class="two">
+    <div class="card" aria-live="polite">
+      <h2>Patient（建立或更新）</h2>
+      <div class="row">
+        <div>
+          <label for="p-family">Family</label>
+          <input id="p-family" placeholder="例如：Chen" />
+        </div>
+        <div>
+          <label for="p-given">Given（可放一個）</label>
+          <input id="p-given" placeholder="例如：Pin-Yu" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="p-gender">Gender</label>
+          <select id="p-gender">
+            <option value="">（不填）</option>
+            <option>male</option>
+            <option>female</option>
+            <option>other</option>
+            <option>unknown</option>
+          </select>
+        </div>
+        <div>
+          <label for="p-birth">BirthDate</label>
+          <input id="p-birth" type="date" />
+        </div>
+      </div>
+      <div class="stack">
+        <button id="btn-create-p">建立 Patient</button>
+        <button id="btn-update-p" class="secondary" disabled>更新選取的 Patient</button>
+        <button id="btn-delete-p" class="danger" disabled>刪除選取的 Patient</button>
+        <button id="btn-refresh" class="secondary">重新整理清單</button>
+      </div>
+      <div class="muted">提示：點下方表格一列即可選取病人，欄位會帶入以便更新。</div>
+      <pre id="p-result" class="json" aria-live="polite"></pre>
+    </div>
+
+    <!-- Create / Update Observation -->
+    <div class="card" aria-live="polite">
+      <h2>Observation（建立或更新）</h2>
+      <div class="row">
+        <div>
+          <label for="o-subject">Subject（選擇 Patient）</label>
+          <select id="o-subject"></select>
+        </div>
+        <div>
+          <label for="o-status">Status</label>
+          <select id="o-status">
+            <option>final</option>
+            <option>registered</option>
+            <option>preliminary</option>
+            <option>amended</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="o-code">Code Text</label>
+          <input id="o-code" placeholder="例如：Body Temperature" />
+        </div>
+        <div>
+          <label for="o-time">EffectiveDateTime</label>
+          <input id="o-time" type="datetime-local" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="o-value">Value</label>
+          <input id="o-value" type="number" step="any" placeholder="例如：36.7" />
+        </div>
+        <div>
+          <label for="o-unit">Unit</label>
+          <input id="o-unit" placeholder="例如：°C 或 mg/dL" />
+        </div>
+      </div>
+      <div class="stack">
+        <button id="btn-create-o">建立 Observation</button>
+        <button id="btn-update-o" class="secondary" disabled>更新選取的 Observation</button>
+        <button id="btn-delete-o" class="danger" disabled>刪除選取的 Observation</button>
+      </div>
+      <pre id="o-result" class="json" aria-live="polite"></pre>
+    </div>
+  </div>
+
+  <!-- Patients table -->
+  <div class="card" aria-live="polite">
+    <div class="toolbar">
+      <h2>病人清單</h2>
+      <div class="stack">
+        <input id="q-name" placeholder="姓名關鍵字（例如 chen）" aria-label="搜尋姓名關鍵字" />
+        <button id="btn-search-p" class="secondary">搜尋</button>
+      </div>
+    </div>
+    <table id="patients">
+      <thead>
+        <tr>
+          <th>姓名</th>
+          <th>性別</th>
+          <th>生日</th>
+          <th class="id">ID</th>
+          <th class="right">操作</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p class="muted">點一列會選取病人並載入 Observations。</p>
+  </div>
+
+  <!-- Observations table with paging/sort -->
+  <div class="card" aria-live="polite">
+    <div class="toolbar">
+      <h2>Observations（<span id="sel-name">未選擇</span>）</h2>
+      <div class="controls">
+        <label for="o-sort">排序</label>
+        <select id="o-sort" aria-label="Observations 排序">
+          <option value="-effectiveDateTime">最新時間優先</option>
+          <option value="effectiveDateTime">最舊時間優先</option>
+          <option value="status">Status ↑</option>
+          <option value="-status">Status ↓</option>
+          <option value="code">Code ↑</option>
+          <option value="-code">Code ↓</option>
+        </select>
+        <label for="o-count">每頁</label>
+        <select id="o-count" aria-label="每頁顯示筆數">
+          <option>5</option>
+          <option selected>10</option>
+          <option>20</option>
+        </select>
+        <button id="o-prev" class="secondary">上一頁</button>
+        <span id="o-page" class="pill" aria-live="polite">1</span>
+        <button id="o-next" class="secondary">下一頁</button>
+      </div>
+    </div>
+    <span id="sel-id" class="pill" aria-live="polite"></span>
+    <table id="obstable">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Code</th>
+          <th>Value</th>
+          <th>Time</th>
+          <th class="id">ID</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- JSON viewer -->
+  <div class="card" aria-live="polite">
+    <h2>Raw JSON（最近一次操作）</h2>
+    <pre id="last-json" class="json"></pre>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* -------------------- 基礎 API 與工具 -------------------- */
+const api = {
+  get: (url) => fetch(url).then(r => r.json()),
+  post: (url, data) => fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(data) }).then(r => r.json()),
+  put: (url, data) => fetch(url, { method:"PUT", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(data) }).then(r => r.json()),
+  del: (url) => fetch(url, { method:"DELETE" }).then(r => (r.status===204 ? {} : r.json()))
+};
+const el = (id) => document.getElementById(id);
+const J = (obj) => JSON.stringify(obj, null, 2);
+const setJSON = (id, data) => el(id).textContent = J(data || {});
+
+/* UI helpers：busy、toast、safe 包裝、debounce、時間格式化 */
+function setBusy(node, busy=true){
+  if(!node) return;
+  node.classList.toggle('loading', busy);
+  node.setAttribute('aria-busy', busy ? 'true' : 'false');
+  // 嘗試禁用按鈕（若 node 是按鈕）
+  if (node.tagName === 'BUTTON') node.disabled = !!busy;
+}
+function toast(msg, ok=true){
+  const t = el('toast');
+  t.textContent = msg;
+  t.style.background = ok ? '#111827' : '#991b1b';
+  t.classList.add('show');
+  setTimeout(()=> t.classList.remove('show'), 2200);
+}
+async function safe(fn, {target} = {}){
+  try { if(target) setBusy(target,true); return await fn(); }
+  catch(e){ console.error(e); toast(e.message || '發生錯誤', false); throw e; }
+  finally{ if(target) setBusy(target,false); }
+}
+const debounce = (fn, ms=400) => {
+  let t; return (...args) => { clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
+};
+function fmtTWDateTime(iso){
+  if(!iso) return '';
+  try { return new Date(iso).toLocaleString('zh-TW', {hour12:false}); }
+  catch { return iso; }
+}
+
+/* -------------------- Domain helpers -------------------- */
+function fhirName(p) {
+  const n = (p.name && p.name[0]) || {};
+  const fam = n.family || "";
+  const giv = (n.given || []).join(" ");
+  return (fam + " " + giv).trim() || "(no name)";
+}
+
+let selectedPatient = null;
+let selectedObservation = null;
+let obsPage = 1;
+
+function enablePatientActions(enable) {
+  el("btn-update-p").disabled = !enable;
+  el("btn-delete-p").disabled = !enable;
+}
+function enableObsActions(enable) {
+  el("btn-update-o").disabled = !enable;
+  el("btn-delete-o").disabled = !enable;
+}
+
+function fillPatientForm(p) {
+  const n = (p.name && p.name[0]) || {};
+  el("p-family").value = n.family || "";
+  el("p-given").value  = (n.given && n.given[0]) || "";
+  el("p-gender").value = p.gender || "";
+  el("p-birth").value  = p.birthDate || "";
+}
+
+/* -------------------- Render -------------------- */
+function renderPatients(bundle) {
+  const rows = (bundle.entry || []).map(e => e.resource);
+  const tb = el("patients").querySelector("tbody");
+  tb.innerHTML = "";
+  const subjectSelect = el("o-subject");
+  subjectSelect.innerHTML = "";
+
+  for (const p of rows) {
+    const tr = document.createElement("tr");
+    tr.style.cursor = "pointer";
+    tr.setAttribute('tabindex', '0');
+    tr.addEventListener("click", () => {
+      // 清空舊的高亮
+      tb.querySelectorAll("tr").forEach(r => r.classList.remove("row-selected"));
+      tr.classList.add("row-selected");
+      selectedPatient = p;
+      enablePatientActions(true);
+      fillPatientForm(p);
+      loadObservations(1); // reset to first page
+    });
+    tr.addEventListener("keydown", (e) => {
+      if (e.key === 'Enter' || e.key === ' ') tr.click();
+    });
+    tr.innerHTML = `
+      <td>${fhirName(p)}</td>
+      <td>${p.gender || ""}</td>
+      <td>${p.birthDate || ""}</td>
+      <td class="id">${p.id}</td>
+      <td class="right"><button class="secondary" aria-label="選取 ${fhirName(p)}">選取</button></td>
+    `;
+    tb.appendChild(tr);
+
+    const opt = new Option(`${fhirName(p)} (${p.id})`, `Patient/${p.id}`);
+    subjectSelect.add(opt);
+  }
+
+  // 空狀態
+  if (rows.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 5; td.className = 'empty';
+    td.textContent = '目前沒有資料';
+    tr.appendChild(td); tb.appendChild(tr);
+  }
+}
+
+function renderObservations(bundle) {
+  const rows = (bundle.entry || []).map(e => e.resource);
+  const tb = el("obstable").querySelector("tbody");
+  tb.innerHTML = "";
+  selectedObservation = null; enableObsActions(false);
+
+  rows.forEach(o => {
+    const code = (o.code && (o.code.text || (o.code.coding && o.code.coding[0]?.display))) || "";
+    const val  = o.valueQuantity ? `${o.valueQuantity.value ?? ""} ${o.valueQuantity.unit ?? ""}` : "";
+    const eff  = o.effectiveDateTime || "";
+    const tr = document.createElement("tr");
+    tr.style.cursor = "pointer";
+    tr.setAttribute('tabindex', '0');
+    tr.addEventListener("click", () => {
+      // 清空舊的高亮
+      tb.querySelectorAll("tr").forEach(r => r.classList.remove("row-selected"));
+      tr.classList.add("row-selected");
+
+      selectedObservation = o;
+      enableObsActions(true);
+      // 帶入表單以便更新
+      el("o-subject").value = `Patient/${selectedPatient.id}`;
+      el("o-status").value  = o.status;
+      el("o-code").value    = code;
+      el("o-time").value    = eff ? new Date(eff).toISOString().slice(0,16) : "";
+      el("o-value").value   = o.valueQuantity?.value ?? "";
+      el("o-unit").value    = o.valueQuantity?.unit ?? "";
+    });
+    tr.addEventListener("keydown", (e) => {
+      if (e.key === 'Enter' || e.key === ' ') tr.click();
+    });
+    tr.innerHTML = `
+      <td>${o.status}</td>
+      <td>${code}</td>
+      <td>${val}</td>
+      <td>${fmtTWDateTime(eff)}</td>
+      <td class="id">${o.id}</td>
+    `;
+    tb.appendChild(tr);
+  });
+
+  // 空狀態
+  if (rows.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 5; td.className = 'empty';
+    td.textContent = selectedPatient ? '目前沒有 Observation' : '尚未選擇病人';
+    tr.appendChild(td); tb.appendChild(tr);
+  }
+}
+
+/* -------------------- Data flows -------------------- */
+async function loadPatients(q = "") {
+  const url = q ? `/Patient?name=${encodeURIComponent(q)}` : "/Patient";
+  const bundle = await api.get(url);
+  renderPatients(bundle);
+  setJSON("last-json", bundle);
+}
+
+async function loadObservations(page = obsPage) {
+  if (!selectedPatient) { el("sel-name").textContent = "未選擇"; el("sel-id").textContent = ""; return; }
+  obsPage = page;
+  el("sel-name").textContent = fhirName(selectedPatient);
+  el("sel-id").textContent   = `Patient/${selectedPatient.id}`;
+  const sort = el("o-sort").value;
+  const count = parseInt(el("o-count").value, 10) || 10;
+  el("o-page").textContent = String(obsPage);
+  const url = `/Observation?subject=${encodeURIComponent("Patient/" + selectedPatient.id)}&_page=${obsPage}&_count=${count}&_sort=${encodeURIComponent(sort)}`;
+  const bundle = await api.get(url);
+  renderObservations(bundle);
+  setJSON("last-json", bundle);
+}
+
+/* -------------------- CRUD: Patient -------------------- */
+async function createPatient() {
+  await safe(async ()=> {
+    const body = {
+      resourceType: "Patient",
+      name: [{ family: el("p-family").value || undefined, given: [el("p-given").value].filter(Boolean) }],
+      gender: el("p-gender").value || undefined,
+      birthDate: el("p-birth").value || undefined
+    };
+    const res = await api.post("/Patient", body);
+    setJSON("p-result", res);
+    toast('已建立 Patient');
+    await loadPatients();
+  }, {target: el("btn-create-p")});
+}
+
+async function updatePatient() {
+  if (!selectedPatient) return;
+  await safe(async ()=> {
+    const id = selectedPatient.id;
+    const body = {
+      resourceType: "Patient",
+      id,
+      name: [{ family: el("p-family").value || undefined, given: [el("p-given").value].filter(Boolean) }],
+      gender: el("p-gender").value || undefined,
+      birthDate: el("p-birth").value || undefined
+    };
+    const res = await api.put(`/Patient/${id}`, body);
+    setJSON("p-result", res);
+    toast('已更新 Patient');
+    await loadPatients();
+  }, {target: el("btn-update-p")});
+}
+
+async function deletePatient() {
+  if (!selectedPatient) return;
+  if (!confirm(`確認刪除病人 ${fhirName(selectedPatient)}（${selectedPatient.id}）？`)) return;
+  await safe(async ()=> {
+    const id = selectedPatient.id;
+    await api.del(`/Patient/${id}`);
+  }, {target: el("btn-delete-p")});
+  selectedPatient = null; enablePatientActions(false);
+  toast('已刪除 Patient');
+  await loadPatients();
+  // 清空 obs 區塊
+  el("sel-name").textContent = "未選擇";
+  el("sel-id").textContent = "";
+  renderObservations({entry:[]});
+}
+
+/* -------------------- CRUD: Observation -------------------- */
+async function createObservation() {
+  await safe(async ()=> {
+    const nowISO = new Date().toISOString();
+    const chosen = el("o-time").value ? new Date(el("o-time").value).toISOString() : nowISO;
+
+    const body = {
+      resourceType: "Observation",
+      status: el("o-status").value,
+      code: { text: el("o-code").value || "Body Measure" },
+      subject: { reference: el("o-subject").value },
+      effectiveDateTime: chosen,
+      valueQuantity: {
+        value: el("o-value").value ? Number(el("o-value").value) : undefined,
+        unit: el("o-unit").value || undefined
+      }
+    };
+    const res = await api.post("/Observation", body);
+    setJSON("o-result", res);
+    toast('已建立 Observation');
+    if (selectedPatient && body.subject.reference.endsWith(selectedPatient.id)) await loadObservations(1);
+  }, {target: el("btn-create-o")});
+}
+
+async function updateObservation() {
+  if (!selectedObservation) return;
+  await safe(async ()=> {
+    const id = selectedObservation.id;
+    const body = {
+      resourceType: "Observation",
+      id,
+      status: el("o-status").value,
+      code: { text: el("o-code").value || "Body Measure" },
+      subject: { reference: el("o-subject").value },
+      effectiveDateTime: el("o-time").value ? new Date(el("o-time").value).toISOString() : undefined,
+      valueQuantity: {
+        value: el("o-value").value ? Number(el("o-value").value) : undefined,
+        unit: el("o-unit").value || undefined
+      }
+    };
+    const res = await api.put(`/Observation/${id}`, body);
+    setJSON("o-result", res);
+    toast('已更新 Observation');
+    await loadObservations();
+  }, {target: el("btn-update-o")});
+}
+
+async function deleteObservation() {
+  if (!selectedObservation) return;
+  if (!confirm(`確認刪除 Observation ${selectedObservation.id}？`)) return;
+  await safe(async ()=> {
+    const id = selectedObservation.id;
+    await api.del(`/Observation/${id}`);
+  }, {target: el("btn-delete-o")});
+  selectedObservation = null; enableObsActions(false);
+  toast('已刪除 Observation');
+  await loadObservations();
+}
+
+/* -------------------- 綁定事件 -------------------- */
+el("btn-create-p").addEventListener("click", createPatient);
+el("btn-update-p").addEventListener("click", updatePatient);
+el("btn-delete-p").addEventListener("click", deletePatient);
+el("btn-refresh").addEventListener("click", () => loadPatients());
+el("btn-search-p").addEventListener("click", () => loadPatients(el("q-name").value || ""));
+
+// 搜尋防抖（輸入即搜尋）
+const debouncedSearch = debounce(()=> loadPatients(el("q-name").value || ""), 400);
+el("q-name").addEventListener("input", debouncedSearch);
+
+el("btn-create-o").addEventListener("click", createObservation);
+el("btn-update-o").addEventListener("click", updateObservation);
+el("btn-delete-o").addEventListener("click", deleteObservation);
+
+el("o-prev").addEventListener("click", () => { if (obsPage > 1) loadObservations(obsPage - 1); });
+el("o-next").addEventListener("click", () => loadObservations(obsPage + 1));
+el("o-sort").addEventListener("change", () => loadObservations(1));
+el("o-count").addEventListener("change", () => loadObservations(1));
+
+/* -------------------- 初始 -------------------- */
+loadPatients().catch(err => { console.error(err); toast('載入 Patients 失敗', false); });
+</script>
+</body>
+</html>
