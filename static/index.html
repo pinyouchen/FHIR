@@ -5,15 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Mini FHIR UI</title>
   <style>
-    :root { --border:#e5e7eb; --muted:#6b7280; --ink:#111827; --bg:#fafafa;}
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; max-width: 1200px; margin: auto; background: var(--bg);}
+    :root { --border:#e5e7eb; --muted:#6b7280; --ink:#111827; --bg:#fafafa; --accent:#2563eb; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans TC", sans-serif; padding: 24px; max-width: 1200px; margin: auto; background: var(--bg); color: var(--ink);}
     h1 { margin: 0 0 8px 0 }
     a { color:#2563eb; text-decoration:none }
     .row { display:grid; grid-template-columns: 1fr 1fr; gap:12px }
-    .card { border: 1px solid var(--border); border-radius: 12px; padding:16px; margin: 16px 0; background:white; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+    .card { border: 1px solid var(--border); border-radius: 12px; padding:16px; margin: 16px 0; background:white; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
     label { display:block; font-size: 14px; color:#374151; margin-top:8px }
     input, select { width: 100%; padding:8px; border:1px solid #d1d5db; border-radius:8px; margin-top:4px; background:white }
-    button { margin-top:12px; padding:10px 14px; border-radius:10px; border:1px solid var(--ink); background:var(--ink); color:white; cursor:pointer }
+    button { margin-top:12px; padding:10px 14px; border-radius:10px; border:1px solid var(--ink); background:var(--ink); color:white; cursor:pointer; transition:.2s }
+    button:hover { filter: brightness(0.95) }
     button.secondary { background:white; color:var(--ink) }
     button.danger { background:#991b1b; border-color:#991b1b }
     button:disabled { opacity:.6; cursor:not-allowed }
@@ -29,6 +30,38 @@
     .toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; margin-bottom:8px }
     .right { text-align:right }
     .controls { display:flex; gap:8px; align-items:center }
+
+    /* 選取高亮、loading、空狀態、toast */
+    .row-selected { background:#eef2ff !important }
+    .loading { opacity:.6; pointer-events:none }
+    .empty { padding:16px; color:var(--muted); font-style:italic }
+    .toast {
+      position: fixed; right: 20px; bottom: 20px; background:#111827; color:white;
+      padding:10px 14px; border-radius:10px; box-shadow:0 4px 14px rgba(0,0,0,.2);
+      opacity:0; transform: translateY(8px); transition:.25s; z-index:9999;
+    }
+    .toast.show { opacity:1; transform: translateY(0) }
+
+    /* === Results 檔案清單樣式（美化） === */
+    .files { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:14px }
+    .file { border:1px solid var(--border); border-radius:12px; padding:12px; background:white; display:flex; gap:12px; align-items:center; box-shadow:0 2px 8px rgba(0,0,0,.04); transition:.18s }
+    .file:hover { transform: translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,.07); }
+    .file .thumb { width:60px; height:60px; border-radius:10px; border:1px solid var(--border); object-fit:cover; background:#f1f5f9; display:grid; place-items:center; font-size:26px }
+    .file .meta { min-width:0 }
+    .file .name { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .file .path { color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .file .actions { margin-left:auto; display:flex; gap:8px }
+    .file .actions a, .file .actions button { font-size:12px; padding:7px 10px; border-radius:8px; border:1px solid var(--border); background:white; color:var(--ink); cursor:pointer }
+    .file .actions a:hover, .file .actions button:hover { background:#f8fafc }
+    .row-compact { display:flex; gap:8px; align-items:center; flex-wrap:wrap }
+    .select-run { min-width:280px }
+
+    /* 預覽 Overlay */
+    .overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:9998; }
+    .overlay.show { display:flex }
+    .overlay img { max-width:90vw; max-height:90vh; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.4); }
+    @media (max-width:900px) { .files { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+    @media (max-width:640px) { .files { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -37,21 +70,21 @@
 
   <!-- Create / Update Patient -->
   <div class="two">
-    <div class="card">
+    <div class="card" aria-live="polite">
       <h2>Patient（建立或更新）</h2>
       <div class="row">
         <div>
-          <label>Family</label>
+          <label for="p-family">Family</label>
           <input id="p-family" placeholder="例如：Chen" />
         </div>
         <div>
-          <label>Given（可放一個）</label>
+          <label for="p-given">Given（可放一個）</label>
           <input id="p-given" placeholder="例如：Pin-Yu" />
         </div>
       </div>
       <div class="row">
         <div>
-          <label>Gender</label>
+          <label for="p-gender">Gender</label>
           <select id="p-gender">
             <option value="">（不填）</option>
             <option>male</option>
@@ -61,7 +94,7 @@
           </select>
         </div>
         <div>
-          <label>BirthDate</label>
+          <label for="p-birth">BirthDate</label>
           <input id="p-birth" type="date" />
         </div>
       </div>
@@ -72,19 +105,19 @@
         <button id="btn-refresh" class="secondary">重新整理清單</button>
       </div>
       <div class="muted">提示：點下方表格一列即可選取病人，欄位會帶入以便更新。</div>
-      <pre id="p-result" class="json"></pre>
+      <pre id="p-result" class="json" aria-live="polite"></pre>
     </div>
 
     <!-- Create / Update Observation -->
-    <div class="card">
+    <div class="card" aria-live="polite">
       <h2>Observation（建立或更新）</h2>
       <div class="row">
         <div>
-          <label>Subject（選擇 Patient）</label>
+          <label for="o-subject">Subject（選擇 Patient）</label>
           <select id="o-subject"></select>
         </div>
         <div>
-          <label>Status</label>
+          <label for="o-status">Status</label>
           <select id="o-status">
             <option>final</option>
             <option>registered</option>
@@ -95,21 +128,21 @@
       </div>
       <div class="row">
         <div>
-          <label>Code Text</label>
+          <label for="o-code">Code Text</label>
           <input id="o-code" placeholder="例如：Body Temperature" />
         </div>
         <div>
-          <label>EffectiveDateTime</label>
+          <label for="o-time">EffectiveDateTime</label>
           <input id="o-time" type="datetime-local" />
         </div>
       </div>
       <div class="row">
         <div>
-          <label>Value</label>
+          <label for="o-value">Value</label>
           <input id="o-value" type="number" step="any" placeholder="例如：36.7" />
         </div>
         <div>
-          <label>Unit</label>
+          <label for="o-unit">Unit</label>
           <input id="o-unit" placeholder="例如：°C 或 mg/dL" />
         </div>
       </div>
@@ -118,16 +151,16 @@
         <button id="btn-update-o" class="secondary" disabled>更新選取的 Observation</button>
         <button id="btn-delete-o" class="danger" disabled>刪除選取的 Observation</button>
       </div>
-      <pre id="o-result" class="json"></pre>
+      <pre id="o-result" class="json" aria-live="polite"></pre>
     </div>
   </div>
 
   <!-- Patients table -->
-  <div class="card">
+  <div class="card" aria-live="polite">
     <div class="toolbar">
       <h2>病人清單</h2>
       <div class="stack">
-        <input id="q-name" placeholder="姓名關鍵字（例如 chen）" />
+        <input id="q-name" placeholder="姓名關鍵字（例如 chen）" aria-label="搜尋姓名關鍵字" />
         <button id="btn-search-p" class="secondary">搜尋</button>
       </div>
     </div>
@@ -147,12 +180,12 @@
   </div>
 
   <!-- Observations table with paging/sort -->
-  <div class="card">
+  <div class="card" aria-live="polite">
     <div class="toolbar">
       <h2>Observations（<span id="sel-name">未選擇</span>）</h2>
       <div class="controls">
-        <label>排序</label>
-        <select id="o-sort">
+        <label for="o-sort">排序</label>
+        <select id="o-sort" aria-label="Observations 排序">
           <option value="-effectiveDateTime">最新時間優先</option>
           <option value="effectiveDateTime">最舊時間優先</option>
           <option value="status">Status ↑</option>
@@ -160,18 +193,18 @@
           <option value="code">Code ↑</option>
           <option value="-code">Code ↓</option>
         </select>
-        <label>每頁</label>
-        <select id="o-count">
+        <label for="o-count">每頁</label>
+        <select id="o-count" aria-label="每頁顯示筆數">
           <option>5</option>
           <option selected>10</option>
           <option>20</option>
         </select>
         <button id="o-prev" class="secondary">上一頁</button>
-        <span id="o-page" class="pill">1</span>
+        <span id="o-page" class="pill" aria-live="polite">1</span>
         <button id="o-next" class="secondary">下一頁</button>
       </div>
     </div>
-    <span id="sel-id" class="pill"></span>
+    <span id="sel-id" class="pill" aria-live="polite"></span>
     <table id="obstable">
       <thead>
         <tr>
@@ -186,13 +219,37 @@
     </table>
   </div>
 
+  <!-- 分析輸出 Results（美化版） -->
+  <div class="card" aria-live="polite">
+    <div class="toolbar">
+      <h2>分析輸出（Results）</h2>
+      <div class="row-compact">
+        <label for="runs-select">選擇 Run</label>
+        <select id="runs-select" class="select-run"></select>
+        <button id="runs-refresh" class="secondary">重新整理</button>
+        <span id="runs-count" class="pill">0 檔</span>
+      </div>
+    </div>
+    <div id="runs-note" class="muted" style="margin-bottom:8px;">資料來自 <code>/api/list-runs</code>。PNG 會顯示縮圖（可預覽）；XLSX/CSV 可直接下載。</div>
+    <div id="files" class="files" role="list"></div>
+  </div>
+
   <!-- JSON viewer -->
-  <div class="card">
+  <div class="card" aria-live="polite">
     <h2>Raw JSON（最近一次操作）</h2>
     <pre id="last-json" class="json"></pre>
   </div>
 
+  <!-- Toast -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- 預覽 Overlay -->
+  <div id="overlay" class="overlay" aria-hidden="true">
+    <img id="overlay-img" alt="preview" />
+  </div>
+
 <script>
+/* -------------------- 基礎 API 與工具 -------------------- */
 const api = {
   get: (url) => fetch(url).then(r => r.json()),
   post: (url, data) => fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(data) }).then(r => r.json()),
@@ -203,6 +260,29 @@ const el = (id) => document.getElementById(id);
 const J = (obj) => JSON.stringify(obj, null, 2);
 const setJSON = (id, data) => el(id).textContent = J(data || {});
 
+/* UI helpers */
+function setBusy(node, busy=true){
+  if(!node) return;
+  node.classList.toggle('loading', busy);
+  node.setAttribute('aria-busy', busy ? 'true' : 'false');
+  if (node.tagName === 'BUTTON') node.disabled = !!busy;
+}
+function toast(msg, ok=true){
+  const t = el('toast');
+  t.textContent = msg;
+  t.style.background = ok ? '#111827' : '#991b1b';
+  t.classList.add('show');
+  setTimeout(()=> t.classList.remove('show'), 2200);
+}
+async function safe(fn, {target} = {}){
+  try { if(target) setBusy(target,true); return await fn(); }
+  catch(e){ console.error(e); toast(e.message || '發生錯誤', false); throw e; }
+  finally{ if(target) setBusy(target,false); }
+}
+const debounce = (fn, ms=400) => { let t; return (...args) => { clearTimeout(t); t = setTimeout(()=>fn(...args), ms); }; };
+function fmtTWDateTime(iso){ if(!iso) return ''; try { return new Date(iso).toLocaleString('zh-TW', {hour12:false}); } catch { return iso; } }
+
+/* -------------------- Domain helpers -------------------- */
 function fhirName(p) {
   const n = (p.name && p.name[0]) || {};
   const fam = n.family || "";
@@ -214,15 +294,8 @@ let selectedPatient = null;
 let selectedObservation = null;
 let obsPage = 1;
 
-function enablePatientActions(enable) {
-  el("btn-update-p").disabled = !enable;
-  el("btn-delete-p").disabled = !enable;
-}
-function enableObsActions(enable) {
-  el("btn-update-o").disabled = !enable;
-  el("btn-delete-o").disabled = !enable;
-}
-
+function enablePatientActions(enable) { el("btn-update-p").disabled = !enable; el("btn-delete-p").disabled = !enable; }
+function enableObsActions(enable) { el("btn-update-o").disabled = !enable; el("btn-delete-o").disabled = !enable; }
 function fillPatientForm(p) {
   const n = (p.name && p.name[0]) || {};
   el("p-family").value = n.family || "";
@@ -231,6 +304,7 @@ function fillPatientForm(p) {
   el("p-birth").value  = p.birthDate || "";
 }
 
+/* -------------------- Render Patients / Observations -------------------- */
 function renderPatients(bundle) {
   const rows = (bundle.entry || []).map(e => e.resource);
   const tb = el("patients").querySelector("tbody");
@@ -241,23 +315,29 @@ function renderPatients(bundle) {
   for (const p of rows) {
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
+    tr.setAttribute('tabindex', '0');
     tr.addEventListener("click", () => {
-      selectedPatient = p;
-      enablePatientActions(true);
-      fillPatientForm(p);
-      loadObservations(1); // reset to first page
+      tb.querySelectorAll("tr").forEach(r => r.classList.remove("row-selected"));
+      tr.classList.add("row-selected");
+      selectedPatient = p; enablePatientActions(true); fillPatientForm(p); loadObservations(1);
     });
+    tr.addEventListener("keydown", (e) => { if (e.key === 'Enter' || e.key === ' ') tr.click(); });
     tr.innerHTML = `
       <td>${fhirName(p)}</td>
       <td>${p.gender || ""}</td>
       <td>${p.birthDate || ""}</td>
       <td class="id">${p.id}</td>
-      <td class="right"><button class="secondary">選取</button></td>
+      <td class="right"><button class="secondary" aria-label="選取 ${fhirName(p)}">選取</button></td>
     `;
     tb.appendChild(tr);
-
     const opt = new Option(`${fhirName(p)} (${p.id})`, `Patient/${p.id}`);
     subjectSelect.add(opt);
+  }
+  if (rows.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 5; td.className = 'empty'; td.textContent = '目前沒有資料';
+    tr.appendChild(td); tb.appendChild(tr);
   }
 }
 
@@ -273,10 +353,11 @@ function renderObservations(bundle) {
     const eff  = o.effectiveDateTime || "";
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
+    tr.setAttribute('tabindex', '0');
     tr.addEventListener("click", () => {
-      selectedObservation = o;
-      enableObsActions(true);
-      // 帶入表單以便更新
+      tb.querySelectorAll("tr").forEach(r => r.classList.remove("row-selected"));
+      tr.classList.add("row-selected");
+      selectedObservation = o; enableObsActions(true);
       el("o-subject").value = `Patient/${selectedPatient.id}`;
       el("o-status").value  = o.status;
       el("o-code").value    = code;
@@ -284,24 +365,119 @@ function renderObservations(bundle) {
       el("o-value").value   = o.valueQuantity?.value ?? "";
       el("o-unit").value    = o.valueQuantity?.unit ?? "";
     });
+    tr.addEventListener("keydown", (e) => { if (e.key === 'Enter' || e.key === ' ') tr.click(); });
     tr.innerHTML = `
       <td>${o.status}</td>
       <td>${code}</td>
       <td>${val}</td>
-      <td>${eff}</td>
+      <td>${fmtTWDateTime(eff)}</td>
       <td class="id">${o.id}</td>
     `;
     tb.appendChild(tr);
   });
+  if (rows.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 5; td.className = 'empty';
+    td.textContent = selectedPatient ? '目前沒有 Observation' : '尚未選擇病人';
+    tr.appendChild(td); tb.appendChild(tr);
+  }
 }
 
+/* -------------------- Results /api/list-runs -------------------- */
+function isImg(url){ return /\.(png|jpg|jpeg|gif)$/i.test(url); }
+function isSheet(url){ return /\.(xlsx|csv)$/i.test(url); }
+function baseName(url){ try { return decodeURIComponent(url.split('/').pop()); } catch { return url; } }
+function iconFor(url){
+  if (isImg(url)) return '🖼️';
+  if (isSheet(url)) return '📊';
+  if (/\.json$/i.test(url)) return '🧩';
+  if (/\.zip$/i.test(url)) return '📦';
+  return '📄';
+}
+
+function renderRuns(runs){
+  const sel = el('runs-select');
+  sel.innerHTML = '';
+  if(!runs || runs.length===0){
+    el('files').innerHTML = '<div class="empty">目前沒有任何 Run</div>';
+    el('runs-count').textContent = '0 檔';
+    return;
+  }
+  runs.forEach(r => sel.add(new Option(r.run_id, r.run_id)));
+  sel.value = runs[runs.length-1].run_id;
+
+  const show = (runId)=>{
+    const run = runs.find(r => r.run_id === runId) || runs[runs.length-1];
+    const files = run.files || [];
+    el('runs-count').textContent = `${files.length} 檔`;
+
+    const wrap = el('files'); wrap.innerHTML = '';
+    if(files.length===0){ wrap.innerHTML = '<div class="empty">此 Run 內沒有檔案</div>'; return; }
+
+    files.forEach(url=>{
+      const item = document.createElement('div');
+      item.className = 'file';
+
+      const thumb = document.createElement('div');
+      thumb.className = 'thumb';
+      if (isImg(url)) {
+        const img = new Image();
+        img.src = url; img.alt = baseName(url); img.style.width='100%'; img.style.height='100%'; img.style.objectFit='cover'; img.style.borderRadius='10px';
+        img.addEventListener('click', ()=>openPreview(url));
+        thumb.appendChild(img);
+      } else {
+        thumb.textContent = iconFor(url);
+      }
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.innerHTML = `<div class="name" title="${baseName(url)}">${baseName(url)}</div>
+                        <div class="path" title="${url}">${url}</div>`;
+
+      const acts = document.createElement('div');
+      acts.className = 'actions';
+      const aOpen = document.createElement('a');
+      aOpen.href = url; aOpen.target = '_blank';
+      aOpen.textContent = '開啟 / 下載';
+      const btnCopy = document.createElement('button');
+      btnCopy.type='button'; btnCopy.textContent='複製連結';
+      btnCopy.addEventListener('click', async()=>{ await navigator.clipboard.writeText(location.origin + url); toast('已複製'); });
+
+      acts.appendChild(aOpen); acts.appendChild(btnCopy);
+      item.appendChild(thumb); item.appendChild(meta); item.appendChild(acts);
+      wrap.appendChild(item);
+    });
+  };
+
+  sel.onchange = e => show(e.target.value);
+  show(sel.value);
+}
+
+async function loadRuns(targetBtn){
+  await safe(async ()=>{
+    const data = await api.get('/api/list-runs');
+    if(!data.ok){ throw new Error('API not ok'); }
+    renderRuns(data.runs || []);
+  }, {target: targetBtn});
+}
+
+/* 影像預覽 Overlay */
+function openPreview(src){
+  const ov = el('overlay'); const img = el('overlay-img');
+  img.src = src; ov.classList.add('show'); ov.setAttribute('aria-hidden','false');
+}
+['overlay','overlay-img'].forEach(id=>{
+  el(id).addEventListener('click', ()=>{ el('overlay').classList.remove('show'); el('overlay').setAttribute('aria-hidden','true'); });
+});
+
+/* -------------------- Data flows -------------------- */
 async function loadPatients(q = "") {
   const url = q ? `/Patient?name=${encodeURIComponent(q)}` : "/Patient";
   const bundle = await api.get(url);
   renderPatients(bundle);
   setJSON("last-json", bundle);
 }
-
 async function loadObservations(page = obsPage) {
   if (!selectedPatient) { el("sel-name").textContent = "未選擇"; el("sel-id").textContent = ""; return; }
   obsPage = page;
@@ -316,95 +492,14 @@ async function loadObservations(page = obsPage) {
   setJSON("last-json", bundle);
 }
 
-async function createPatient() {
-  const body = {
-    resourceType: "Patient",
-    name: [{ family: el("p-family").value || undefined, given: [el("p-given").value].filter(Boolean) }],
-    gender: el("p-gender").value || undefined,
-    birthDate: el("p-birth").value || undefined
-  };
-  const res = await api.post("/Patient", body);
-  setJSON("p-result", res);
-  await loadPatients();
-}
-
-async function updatePatient() {
-  if (!selectedPatient) return;
-  const id = selectedPatient.id;
-  const body = {
-    resourceType: "Patient",
-    id,
-    name: [{ family: el("p-family").value || undefined, given: [el("p-given").value].filter(Boolean) }],
-    gender: el("p-gender").value || undefined,
-    birthDate: el("p-birth").value || undefined
-  };
-  const res = await api.put(`/Patient/${id}`, body);
-  setJSON("p-result", res);
-  await loadPatients();
-}
-
-async function deletePatient() {
-  if (!selectedPatient) return;
-  const id = selectedPatient.id;
-  await api.del(`/Patient/${id}`);
-  selectedPatient = null; enablePatientActions(false);
-  await loadPatients();
-  // 清空 obs 區塊
-  el("sel-name").textContent = "未選擇";
-  el("sel-id").textContent = "";
-  renderObservations({entry:[]});
-}
-
-async function createObservation() {
-  const body = {
-    resourceType: "Observation",
-    status: el("o-status").value,
-    code: { text: el("o-code").value || "Body Measure" },
-    subject: { reference: el("o-subject").value },
-    effectiveDateTime: el("o-time").value ? new Date(el("o-time").value).toISOString() : undefined,
-    valueQuantity: {
-      value: el("o-value").value ? Number(el("o-value").value) : undefined,
-      unit: el("o-unit").value || undefined
-    }
-  };
-  const res = await api.post("/Observation", body);
-  setJSON("o-result", res);
-  if (selectedPatient && body.subject.reference.endsWith(selectedPatient.id)) await loadObservations(1);
-}
-
-async function updateObservation() {
-  if (!selectedObservation) return;
-  const id = selectedObservation.id;
-  const body = {
-    resourceType: "Observation",
-    id,
-    status: el("o-status").value,
-    code: { text: el("o-code").value || "Body Measure" },
-    subject: { reference: el("o-subject").value },
-    effectiveDateTime: el("o-time").value ? new Date(el("o-time").value).toISOString() : undefined,
-    valueQuantity: {
-      value: el("o-value").value ? Number(el("o-value").value) : undefined,
-      unit: el("o-unit").value || undefined
-    }
-  };
-  const res = await api.put(`/Observation/${id}`, body);
-  setJSON("o-result", res);
-  await loadObservations();
-}
-
-async function deleteObservation() {
-  if (!selectedObservation) return;
-  const id = selectedObservation.id;
-  await api.del(`/Observation/${id}`);
-  selectedObservation = null; enableObsActions(false);
-  await loadObservations();
-}
-
+/* -------------------- 綁定 -------------------- */
 el("btn-create-p").addEventListener("click", createPatient);
 el("btn-update-p").addEventListener("click", updatePatient);
 el("btn-delete-p").addEventListener("click", deletePatient);
 el("btn-refresh").addEventListener("click", () => loadPatients());
 el("btn-search-p").addEventListener("click", () => loadPatients(el("q-name").value || ""));
+const debouncedSearch = debounce(()=> loadPatients(el("q-name").value || ""), 400);
+el("q-name").addEventListener("input", debouncedSearch);
 
 el("btn-create-o").addEventListener("click", createObservation);
 el("btn-update-o").addEventListener("click", updateObservation);
@@ -415,8 +510,104 @@ el("o-next").addEventListener("click", () => loadObservations(obsPage + 1));
 el("o-sort").addEventListener("change", () => loadObservations(1));
 el("o-count").addEventListener("change", () => loadObservations(1));
 
-// 初始
-loadPatients().catch(console.error);
+el('runs-refresh').addEventListener('click', (e)=> loadRuns(e.target));
+
+/* -------------------- 初始 -------------------- */
+loadPatients().catch(err => { console.error(err); toast('載入 Patients 失敗', false); });
+loadRuns().catch(err => { console.error(err); toast('載入 Results 失敗', false); });
+
+/* -------------------- CRUD 實作 -------------------- */
+async function createPatient() {
+  await safe(async ()=> {
+    const body = {
+      resourceType: "Patient",
+      name: [{ family: el("p-family").value || undefined, given: [el("p-given").value].filter(Boolean) }],
+      gender: el("p-gender").value || undefined,
+      birthDate: el("p-birth").value || undefined
+    };
+    const res = await api.post("/Patient", body);
+    setJSON("p-result", res);
+    toast('已建立 Patient');
+    await loadPatients();
+  }, {target: el("btn-create-p")});
+}
+async function updatePatient() {
+  if (!selectedPatient) return;
+  await safe(async ()=> {
+    const id = selectedPatient.id;
+    const body = {
+      resourceType: "Patient",
+      id,
+      name: [{ family: el("p-family").value || undefined, given: [el("p-given").value].filter(Boolean) }],
+      gender: el("p-gender").value || undefined,
+      birthDate: el("p-birth").value || undefined
+    };
+    const res = await api.put(`/Patient/${id}`, body);
+    setJSON("p-result", res);
+    toast('已更新 Patient');
+    await loadPatients();
+  }, {target: el("btn-update-p")});
+}
+async function deletePatient() {
+  if (!selectedPatient) return;
+  if (!confirm(`確認刪除病人 ${fhirName(selectedPatient)}（${selectedPatient.id}）？`)) return;
+  await safe(async ()=> { await api.del(`/Patient/${selectedPatient.id}`); }, {target: el("btn-delete-p")});
+  selectedPatient = null; enablePatientActions(false);
+  toast('已刪除 Patient');
+  await loadPatients();
+  el("sel-name").textContent = "未選擇"; el("sel-id").textContent = ""; renderObservations({entry:[]});
+}
+async function createObservation() {
+  await safe(async ()=> {
+    const nowISO = new Date().toISOString();
+    const chosen = el("o-time").value ? new Date(el("o-time").value).toISOString() : nowISO;
+    const body = {
+      resourceType: "Observation",
+      status: el("o-status").value,
+      code: { text: el("o-code").value || "Body Measure" },
+      subject: { reference: el("o-subject").value },
+      effectiveDateTime: chosen,
+      valueQuantity: {
+        value: el("o-value").value ? Number(el("o-value").value) : undefined,
+        unit: el("o-unit").value || undefined
+      }
+    };
+    const res = await api.post("/Observation", body);
+    setJSON("o-result", res);
+    toast('已建立 Observation');
+    if (selectedPatient && body.subject.reference.endsWith(selectedPatient.id)) await loadObservations(1);
+  }, {target: el("btn-create-o")});
+}
+async function updateObservation() {
+  if (!selectedObservation) return;
+  await safe(async ()=> {
+    const id = selectedObservation.id;
+    const body = {
+      resourceType: "Observation",
+      id,
+      status: el("o-status").value,
+      code: { text: el("o-code").value || "Body Measure" },
+      subject: { reference: el("o-subject").value },
+      effectiveDateTime: el("o-time").value ? new Date(el("o-time").value).toISOString() : undefined,
+      valueQuantity: {
+        value: el("o-value").value ? Number(el("o-value").value) : undefined,
+        unit: el("o-unit").value || undefined
+      }
+    };
+    const res = await api.put(`/Observation/${id}`, body);
+    setJSON("o-result", res);
+    toast('已更新 Observation');
+    await loadObservations();
+  }, {target: el("btn-update-o")});
+}
+async function deleteObservation() {
+  if (!selectedObservation) return;
+  if (!confirm(`確認刪除 Observation ${selectedObservation.id}？`)) return;
+  await safe(async ()=> { await api.del(`/Observation/${selectedObservation.id}`); }, {target: el("btn-delete-o")});
+  selectedObservation = null; enableObsActions(false);
+  toast('已刪除 Observation');
+  await loadObservations();
+}
 </script>
 </body>
 </html>
